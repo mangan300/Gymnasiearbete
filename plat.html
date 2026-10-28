@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plåtbearbetning</title>
+<!--
+  Namn: Magnus Bergkvist
+  Klass: Te14
+
+  Webbversion av plåtprogrammet.
+  Man anger bredd, tjocklek och längd på en plåt (mm) och formar sedan om
+  plåten med reglage. Volymen är alltid densamma före och efter: det mått
+  som är valt som "beräknas" räknas ut så att volymen bevaras.
+-->
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --text: #1d2129;
+    --muted: #646b78;
+    --border: #d9dce2;
+    --accent: #2f6fd0;
+    --ok: #2e8b57;
+    --warn: #c0392b;
+    --fore-top: #b7c0cc; --fore-front: #8e99a8; --fore-side: #6f7a8a;
+    --efter-top: #7cc0ea; --efter-front: #3f93c9; --efter-side: #2f75a6;
+    --edge: #2a2f38;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1e2228; --panel: #2c313a; --text: #e6e9ee; --muted: #9aa0aa;
+      --border: #414854; --accent: #6b9ef0; --ok: #5cc28a; --warn: #ee7b6e;
+      --fore-top: #aab4c3; --fore-front: #7c8798; --fore-side: #5f6979;
+      --efter-top: #78bfe8; --efter-front: #4690c2; --efter-side: #33739f;
+      --edge: #14171c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2228; --panel: #2c313a; --text: #e6e9ee; --muted: #9aa0aa;
+    --border: #414854; --accent: #6b9ef0; --ok: #5cc28a; --warn: #ee7b6e;
+    --fore-top: #aab4c3; --fore-front: #7c8798; --fore-side: #5f6979;
+    --efter-top: #78bfe8; --efter-front: #4690c2; --efter-side: #33739f;
+    --edge: #14171c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .app {
+    display: grid; grid-template-columns: 320px 1fr; gap: 16px;
+    max-width: 1300px; margin: 0 auto; padding: 16px;
+  }
+  .kort {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 16px; }
+  h2 { font-size: 1rem; margin: 20px 0 10px; color: var(--muted); font-weight: 600; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+  .falt { margin-bottom: 12px; }
+  input[type=number], select {
+    width: 100%; padding: 8px 10px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  }
+  input[type=number]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .reglage { margin-bottom: 16px; }
+  .reglage .rad { display: flex; justify-content: space-between; font-size: .9rem; }
+  .reglage .rad b { font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .beraknad { opacity: .6; }
+  .beraknad input[type=range] { pointer-events: none; }
+  .knappar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  button {
+    flex: 1; padding: 9px 12px; font: inherit; cursor: pointer;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  button:hover { border-color: var(--accent); }
+  .fel { color: var(--warn); font-size: .9rem; min-height: 1.2em; margin: 8px 0 0; }
+
+  .ritning svg { width: 100%; height: auto; display: block; }
+  .ritning text { fill: var(--text); font-size: 14px; }
+  .ritning .rubrik { fill: var(--muted); font-size: 16px; font-weight: 600; }
+  .ritning .not { fill: var(--muted); font-size: 12px; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: .9rem; }
+  .volym { margin-top: 12px; font-size: .95rem; }
+  .volym .ok { color: var(--ok); font-weight: 600; }
+
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; }
+    th, td { padding: 6px 4px; font-size: .85rem; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="kort">
+    <h1>Plåt</h1>
+
+    <h2>Startplåt</h2>
+    <div class="falt"><label for="b0">Bredd (mm)</label><input id="b0" type="number" min="0" step="any" value="500"></div>
+    <div class="falt"><label for="t0">Tjocklek (mm)</label><input id="t0" type="number" min="0" step="any" value="10"></div>
+    <div class="falt"><label for="l0">Längd (mm)</label><input id="l0" type="number" min="0" step="any" value="1000"></div>
+
+    <h2>Forma om plåten</h2>
+    <div class="falt">
+      <label for="auto">Mått som beräknas (håller volymen konstant)</label>
+      <select id="auto">
+        <option value="t">Tjocklek</option>
+        <option value="b">Bredd</option>
+        <option value="l">Längd</option>
+      </select>
+    </div>
+
+    <div class="reglage" id="r-b">
+      <div class="rad"><span>Bredd</span><b id="v-b"></b></div>
+      <input id="s-b" type="range" min="-200" max="200" value="0" aria-label="Bredd">
+    </div>
+    <div class="reglage" id="r-t">
+      <div class="rad"><span>Tjocklek</span><b id="v-t"></b></div>
+      <input id="s-t" type="range" min="-200" max="200" value="0" aria-label="Tjocklek">
+    </div>
+    <div class="reglage" id="r-l">
+      <div class="rad"><span>Längd</span><b id="v-l"></b></div>
+      <input id="s-l" type="range" min="-200" max="200" value="0" aria-label="Längd">
+    </div>
+
+    <div class="knappar">
+      <button id="aterstall">Återställ</button>
+      <button id="anvand">Använd resultat</button>
+    </div>
+    <p class="fel" id="fel"></p>
+  </div>
+
+  <div class="kort">
+    <div class="ritning"><svg id="svg" viewBox="0 0 900 420" role="img" aria-label="Plåten före och efter"></svg></div>
+    <table>
+      <thead><tr><th></th><th>Bredd</th><th>Tjocklek</th><th>Längd</th></tr></thead>
+      <tbody id="tabell"></tbody>
+    </table>
+    <div class="volym" id="volym"></div>
+  </div>
+</div>
+
+<script>
+  // Reglagen går från -200 till 200. Värdet v ger faktorn 2^(v/100),
+  // alltså från en fjärdedel (x0,25) till fyra gånger (x4) originalmåttet.
+  const MATT = ["b", "t", "l"];
+  const NAMN = { b: "Bredd", t: "Tjocklek", l: "Längd" };
+  const $ = id => document.getElementById(id);
+
+  function faktor(sliderVarde) { return Math.pow(2, sliderVarde / 100); }
+  function sliderVarde(f) { return Math.max(-200, Math.min(200, Math.round(100 * Math.log2(f)))); }
+
+  function startPlat() {
+    const p = {};
+    for (const m of MATT) {
+      const v = parseFloat($(m + "0").value.replace(",", "."));
+      if (!(v > 0)) return null;
+      p[m] = v;
+    }
+    return p;
+  }
+
+  // Räknar ut plåten efter omformning. Två mått styrs av reglagen,
+  // det tredje räknas ut så att bredd * tjocklek * längd blir oförändrad.
+  function beraknaEfter(fore) {
+    const auto = $("auto").value;
+    const efter = {};
+    let produkt = 1;
+    for (const m of MATT) {
+      if (m === auto) continue;
+      const f = faktor(+$("s-" + m).value);
+      efter[m] = fore[m] * f;
+      produkt *= f;
+    }
+    efter[auto] = fore[auto] / produkt;
+    return efter;
+  }
+
+  function fmt(x) {
+    const d = x >= 100 ? 0 : x >= 10 ? 1 : 2;
+    return x.toLocaleString("sv-SE", { maximumFractionDigits: d });
+  }
+
+  // ---- Ritning (isometrisk vy) ----
+  const COS = Math.cos(Math.PI / 6), SIN = 0.5;
+  function iso(x, y, z) { return [(x - y) * COS, (x + y) * SIN - z]; }
+
+  function blockSvg(p, skala, tSkala, mitt, farger, rubrik) {
+    const L = p.l * skala, B = p.b * skala, T = Math.max(p.t * tSkala, 1.5);
+    const horn = [];
+    for (const x of [0, L]) for (const y of [0, B]) for (const z of [0, T]) horn.push(iso(x, y, z));
+    const minX = Math.min(...horn.map(h => h[0])), maxX = Math.max(...horn.map(h => h[0]));
+    const minY = Math.min(...horn.map(h => h[1])), maxY = Math.max(...horn.map(h => h[1]));
+    const ox = mitt[0] - (minX + maxX) / 2, oy = mitt[1] - (minY + maxY) / 2;
+    const P = (x, y, z) => { const [a, b] = iso(x, y, z); return [a + ox, b + oy]; };
+    const poly = (pts, farg) =>
+      `<polygon points="${pts.map(q => q.join(",")).join(" ")}" fill="var(${farg})" stroke="var(--edge)" stroke-width="1" stroke-linejoin="round"/>`;
+
+    let s = "";
+    s += poly([P(0,0,T), P(L,0,T), P(L,B,T), P(0,B,T)], farger[0]);
+    s += poly([P(0,B,0), P(L,B,0), P(L,B,T), P(0,B,T)], farger[1]);
+    s += poly([P(L,0,0), P(L,B,0), P(L,B,T), P(L,0,T)], farger[2]);
+
+    const [lx, ly] = P(L / 2, B, 0);
+    const [bx, by] = P(L, B / 2, 0);
+    const [tx, ty] = P(L, 0, T / 2);
+    s += `<text x="${lx - 12}" y="${ly + 26}" text-anchor="end">L = ${fmt(p.l)} mm</text>`;
+    s += `<text x="${bx + 12}" y="${by + 26}">B = ${fmt(p.b)} mm</text>`;
+    s += `<text x="${tx + 10}" y="${ty + 5}">T = ${fmt(p.t)} mm</text>`;
+    s += `<text class="rubrik" x="${mitt[0]}" y="32" text-anchor="middle">${rubrik}</text>`;
+    return s;
+  }
+
+  function rita(fore, efter) {
+    // Samma skala för båda plåtarna så att man ser skillnaden.
+    const bredast = Math.max(fore.l + fore.b, efter.l + efter.b);
+    const djupast = Math.max(fore.l + fore.b, efter.l + efter.b) * SIN;
+    const skala = Math.min(300 / (bredast * COS), 260 / djupast);
+    // Tjockleken förstoras så att den tjockaste plåten blir 50 px hög.
+    const tSkala = 50 / Math.max(fore.t, efter.t);
+
+    $("svg").innerHTML =
+      blockSvg(fore, skala, tSkala, [215, 215], ["--fore-top", "--fore-front", "--fore-side"], "Före") +
+      blockSvg(efter, skala, tSkala, [655, 215], ["--efter-top", "--efter-front", "--efter-side"], "Efter") +
+      `<text class="not" x="450" y="410" text-anchor="middle">Bredd och längd i samma skala, tjockleken är förstorad i bilden</text>`;
+  }
+
+  // ---- Uppdatera allt ----
+  function uppdatera() {
+    const fore = startPlat();
+    if (!fore) {
+      $("fel").textContent = "Ange positiva tal för bredd, tjocklek och längd.";
+      return;
+    }
+    $("fel").textContent = "";
+
+    const auto = $("auto").value;
+    const efter = beraknaEfter(fore);
+
+    for (const m of MATT) {
+      const ar = m === auto;
+      $("r-" + m).classList.toggle("beraknad", ar);
+      $("s-" + m).disabled = ar;
+      const f = efter[m] / fore[m];
+      if (ar) $("s-" + m).value = sliderVarde(f);
+      $("v-" + m).textContent = `${fmt(efter[m])} mm (×${f.toLocaleString("sv-SE", { maximumFractionDigits: 2 })})` + (ar ? " – beräknad" : "");
+    }
+
+    rita(fore, efter);
+
+    const rad = (namn, p) =>
+      `<tr><td>${namn}</td>${MATT.map(m => `<td>${fmt(p[m])} mm</td>`).join("")}</tr>`;
+    $("tabell").innerHTML = rad("Före", fore) + rad("Efter", efter);
+
+    const vFore = fore.b * fore.t * fore.l;
+    const vEfter = efter.b * efter.t * efter.l;
+    const v = x => Math.round(x).toLocaleString("sv-SE");
+    const lika = Math.abs(vFore - vEfter) / vFore < 1e-9;
+    $("volym").innerHTML = `Volym före: <b>${v(vFore)} mm³</b> &nbsp; Volym efter: <b>${v(vEfter)} mm³</b> &nbsp; ` +
+      (lika ? `<span class="ok">✓ Volymen är bevarad</span>` : `<span style="color:var(--warn)">Volymen skiljer sig</span>`);
+  }
+
+  for (const m of MATT) {
+    $(m + "0").addEventListener("input", uppdatera);
+    $("s-" + m).addEventListener("input", uppdatera);
+  }
+  $("auto").addEventListener("change", () => {
+    // Nollställ det nya beräknade reglaget så att de andra två gäller.
+    $("s-" + $("auto").value).value = 0;
+    uppdatera();
+  });
+  $("aterstall").addEventListener("click", () => {
+    for (const m of MATT) $("s-" + m).value = 0;
+    uppdatera();
+  });
+  $("anvand").addEventListener("click", () => {
+    const fore = startPlat();
+    if (!fore) return;
+    const efter = beraknaEfter(fore);
+    for (const m of MATT) {
+      $(m + "0").value = +efter[m].toPrecision(6);
+      $("s-" + m).value = 0;
+    }
+    uppdatera();
+  });
+
+  uppdatera();
+</script>
+</body>
+</html>
