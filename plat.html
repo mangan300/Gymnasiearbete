@@ -12,6 +12,7 @@
   Man anger bredd, tjocklek och längd på en plåt (mm) och formar sedan om
   plåten med reglage. Volymen är alltid densamma före och efter: det mått
   som är valt som "beräknas" räknas ut så att volymen bevaras.
+  Plåten får som mest vara 15 m lång och 3 m bred.
 -->
 <style>
   :root {
@@ -105,9 +106,9 @@
     <h1>Plåt</h1>
 
     <h2>Startplåt</h2>
-    <div class="falt"><label for="b0">Bredd (mm)</label><input id="b0" type="number" min="0" step="any" value="500"></div>
+    <div class="falt"><label for="b0">Bredd (mm, max 3 000)</label><input id="b0" type="number" min="0" max="3000" step="any" value="500"></div>
     <div class="falt"><label for="t0">Tjocklek (mm)</label><input id="t0" type="number" min="0" step="any" value="10"></div>
-    <div class="falt"><label for="l0">Längd (mm)</label><input id="l0" type="number" min="0" step="any" value="1000"></div>
+    <div class="falt"><label for="l0">Längd (mm, max 15 000)</label><input id="l0" type="number" min="0" max="15000" step="any" value="1000"></div>
 
     <h2>Forma om plåten</h2>
     <div class="falt">
@@ -121,15 +122,15 @@
 
     <div class="reglage" id="r-b">
       <div class="rad"><span>Bredd</span><b id="v-b"></b></div>
-      <input id="s-b" type="range" min="-200" max="200" value="0" aria-label="Bredd">
+      <input id="s-b" type="range" min="-2000" max="2000" value="0" aria-label="Bredd">
     </div>
     <div class="reglage" id="r-t">
       <div class="rad"><span>Tjocklek</span><b id="v-t"></b></div>
-      <input id="s-t" type="range" min="-200" max="200" value="0" aria-label="Tjocklek">
+      <input id="s-t" type="range" min="-2000" max="2000" value="0" aria-label="Tjocklek">
     </div>
     <div class="reglage" id="r-l">
       <div class="rad"><span>Längd</span><b id="v-l"></b></div>
-      <input id="s-l" type="range" min="-200" max="200" value="0" aria-label="Längd">
+      <input id="s-l" type="range" min="-2000" max="2000" value="0" aria-label="Längd">
     </div>
 
     <div class="knappar">
@@ -150,23 +151,65 @@
 </div>
 
 <script>
-  // Reglagen går från -200 till 200. Värdet v ger faktorn 2^(v/100),
+  // Reglagen går från -2000 till 2000. Värdet v ger faktorn 2^(v/1000),
   // alltså från en fjärdedel (x0,25) till fyra gånger (x4) originalmåttet.
   const MATT = ["b", "t", "l"];
   const NAMN = { b: "Bredd", t: "Tjocklek", l: "Längd" };
+  // Största tillåtna mått i mm (tjockleken har ingen gräns)
+  const MAX = { b: 3000, t: Infinity, l: 15000 };
   const $ = id => document.getElementById(id);
 
-  function faktor(sliderVarde) { return Math.pow(2, sliderVarde / 100); }
-  function sliderVarde(f) { return Math.max(-200, Math.min(200, Math.round(100 * Math.log2(f)))); }
+  function faktor(sliderVarde) { return Math.pow(2, sliderVarde / 1000); }
+  function sliderVarde(f) { return Math.max(-2000, Math.min(2000, Math.round(1000 * Math.log2(f)))); }
 
   function startPlat() {
     const p = {};
     for (const m of MATT) {
       const v = parseFloat($(m + "0").value.replace(",", "."));
-      if (!(v > 0)) return null;
+      if (!(v > 0) || v > MAX[m]) return null;
       p[m] = v;
     }
     return p;
+  }
+
+  // Ser till att reglaget för måttet m inte ger en plåt som är större än
+  // maxmåtten, varken för m självt eller för det mått som beräknas.
+  // Returnerar false om det inte går med de andra reglagen som de står.
+  function begransa(fore, m) {
+    const auto = $("auto").value;
+    const ovrig = MATT.find(x => x !== m && x !== auto);
+    const fOvrig = faktor(+$("s-" + ovrig).value);
+    // Måttet m självt: fore[m] * f <= MAX[m]
+    const hogst = Math.min(2000, Math.floor(1000 * Math.log2(MAX[m] / fore[m])));
+    // Det beräknade måttet: fore[auto] / (f * fOvrig) <= MAX[auto]
+    const minst = Math.max(-2000, Math.ceil(1000 * Math.log2(fore[auto] / (MAX[auto] * fOvrig))));
+    if (minst > hogst) return false;
+    const s = $("s-" + m);
+    s.value = Math.max(minst, Math.min(hogst, +s.value));
+    return true;
+  }
+
+  function begransaAlla(fore, forst) {
+    const manuella = MATT.filter(m => m !== $("auto").value);
+    if (forst) manuella.sort((a, b) => (b === forst) - (a === forst));
+    // Kör två varv eftersom reglagen påverkar varandras gränser
+    for (let varv = 0; varv < 2; varv++) {
+      for (const m of manuella) {
+        if (!begransa(fore, m)) {
+          for (const x of MATT) $("s-" + x).value = 0;
+          return;
+        }
+      }
+    }
+  }
+
+  // Skriver volymen (given i mm³) med en lämplig enhet
+  function volymText(mm3) {
+    const enheter = [[1e9, "m³"], [1e6, "dm³"], [1e3, "cm³"], [1, "mm³"]];
+    const [delare, enhet] = enheter.find(([d]) => mm3 >= d) || enheter[3];
+    const v = mm3 / delare;
+    const d = v >= 100 ? 1 : v >= 10 ? 2 : 3;
+    return v.toLocaleString("sv-SE", { maximumFractionDigits: d }) + " " + enhet;
   }
 
   // Räknar ut plåten efter omformning. Två mått styrs av reglagen,
@@ -238,7 +281,7 @@
   function uppdatera() {
     const fore = startPlat();
     if (!fore) {
-      $("fel").textContent = "Ange positiva tal för bredd, tjocklek och längd.";
+      $("fel").textContent = "Ange positiva tal. Bredden får vara högst 3 000 mm och längden högst 15 000 mm.";
       return;
     }
     $("fel").textContent = "";
@@ -263,20 +306,25 @@
 
     const vFore = fore.b * fore.t * fore.l;
     const vEfter = efter.b * efter.t * efter.l;
-    const v = x => Math.round(x).toLocaleString("sv-SE");
     const lika = Math.abs(vFore - vEfter) / vFore < 1e-9;
-    $("volym").innerHTML = `Volym före: <b>${v(vFore)} mm³</b> &nbsp; Volym efter: <b>${v(vEfter)} mm³</b> &nbsp; ` +
+    $("volym").innerHTML = `Volym före: <b>${volymText(vFore)}</b> &nbsp; Volym efter: <b>${volymText(vEfter)}</b> &nbsp; ` +
       (lika ? `<span class="ok">✓ Volymen är bevarad</span>` : `<span style="color:var(--warn)">Volymen skiljer sig</span>`);
   }
 
+  function begransaOchUppdatera(forst) {
+    const fore = startPlat();
+    if (fore) begransaAlla(fore, forst);
+    uppdatera();
+  }
+
   for (const m of MATT) {
-    $(m + "0").addEventListener("input", uppdatera);
-    $("s-" + m).addEventListener("input", uppdatera);
+    $(m + "0").addEventListener("input", () => begransaOchUppdatera());
+    $("s-" + m).addEventListener("input", () => begransaOchUppdatera(m));
   }
   $("auto").addEventListener("change", () => {
     // Nollställ det nya beräknade reglaget så att de andra två gäller.
     $("s-" + $("auto").value).value = 0;
-    uppdatera();
+    begransaOchUppdatera();
   });
   $("aterstall").addEventListener("click", () => {
     for (const m of MATT) $("s-" + m).value = 0;
@@ -293,7 +341,7 @@
     uppdatera();
   });
 
-  uppdatera();
+  begransaOchUppdatera();
 </script>
 </body>
 </html>
